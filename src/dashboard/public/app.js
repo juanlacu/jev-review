@@ -421,7 +421,10 @@ function findings(report) {
             "td",
             { class: "dim" },
             h("span", {}, labels[finding.dimension] ?? String(finding.dimension)),
-            finding.mechanism && h("small", {}, String(finding.mechanism)),
+            finding.mechanism &&
+              h("small", {}, [finding.mechanism, finding.pattern].filter(Boolean).map(String).join(" · ")),
+            finding.explanation && h("p", { class: "explain" }, String(finding.explanation)),
+            finding.code && h("code", { class: "snippet" }, String(finding.code)),
           ),
           h("td", { class: "sev" }, h("span", { class: "sr" }, "severity "), severityMeter(finding.severity)),
           h("td", { class: "owner" }, finding.owner ? String(finding.owner) : "–"),

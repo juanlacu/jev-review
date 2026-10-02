@@ -544,7 +544,7 @@ table {
 
 .findings .loc {
   max-width: 0;
-  width: 44%;
+  width: 30%;
 }
 
 .dim {
@@ -557,7 +557,27 @@ table {
   margin-top: 2px;
   color: var(--muted);
   font-size: 10px;
-  text-transform: capitalize;
+}
+
+.dim .explain {
+  margin: 6px 0 0;
+  max-width: 52ch;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.dim .snippet {
+  display: block;
+  margin-top: 6px;
+  padding: 4px 6px;
+  border-left: 2px solid var(--rule);
+  background: var(--page);
+  color: var(--ink-2);
+  font: 11px/1.4 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .prob,
