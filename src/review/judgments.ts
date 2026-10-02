@@ -16,10 +16,11 @@ import type {
   ChangedFile,
   FileProfile,
   Finding,
+  ReportedIssue,
   Screening,
   Signal,
 } from "../domain/types.ts";
-import { explainFinding } from "./explain.ts";
+import { beyondReported, explainFinding } from "./explain.ts";
 
 const client = new TypeSafeClient();
 
@@ -163,7 +164,9 @@ export async function profileFile(
 
 export async function locateSignal(
   signal: Signal<ChangedFile>,
+  alreadyReported: ReportedIssue[] = [],
 ): Promise<Finding<ChangedFile> | null> {
+  const beyond = beyondReported(alreadyReported);
   const hunks = parseHunks(signal.file.patch);
   if (hunks.length === 0) return null;
 
@@ -176,11 +179,12 @@ export async function locateSignal(
       file: signal.file.path,
       suspectedConcern: { ...suspectedConcern, screeningProbability: signal.probability },
       candidateHunks: hunks,
+      ...beyond.state,
     },
     questions: {
       evidence: choice(
         {
-          question: "Which candidate hunk provides the strongest direct evidence for suspectedConcern?",
+          question: "Which candidate hunk provides the strongest direct evidence for suspectedConcern" + beyond.clause + "?",
           fallback: "Select noMatch when no hunk provides sufficient evidence",
         },
         {
@@ -199,10 +203,10 @@ export async function locateSignal(
   if (!hunk) return null;
 
   const classification = await client.systemOne({
-    state: { file: signal.file.path, suspectedConcern, selectedEvidence: hunk },
+    state: { file: signal.file.path, suspectedConcern, selectedEvidence: hunk, ...beyond.state },
     questions: {
       mechanism: choice(
-        "Which mechanism best describes the suspected concern supported by selectedEvidence?",
+        "Which mechanism best describes the suspected concern supported by selectedEvidence" + beyond.clause + "?",
         mechanisms[signal.dimension],
       ),
     },
@@ -227,6 +231,7 @@ export async function locateSignal(
       selectedEvidence: hunk,
       candidateLines: addedLines(hunk),
       fallbackLine: hunk.startLine,
+      alreadyReported,
     }),
   ]);
 

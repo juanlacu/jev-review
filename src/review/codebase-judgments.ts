@@ -17,11 +17,12 @@ import { regionLines } from "../domain/patch.ts";
 import type {
   FileProfile,
   Finding,
+  ReportedIssue,
   Screening,
   Signal,
   SourceFile,
 } from "../domain/types.ts";
-import { explainFinding } from "./explain.ts";
+import { beyondReported, explainFinding } from "./explain.ts";
 
 const client = new TypeSafeClient();
 const REGION_LINES = 80;
@@ -189,7 +190,9 @@ export async function profileSourceFile(
 
 export async function locateSourceSignal(
   signal: Signal<SourceFile>,
+  alreadyReported: ReportedIssue[] = [],
 ): Promise<Finding<SourceFile> | null> {
+  const beyond = beyondReported(alreadyReported);
   const regions = sourceRegions(signal.file.content);
   if (regions.length === 0) return null;
 
@@ -202,11 +205,12 @@ export async function locateSourceSignal(
       file: signal.file.path,
       suspectedConcern: { ...suspectedConcern, screeningProbability: signal.probability },
       candidateRegions: regions,
+      ...beyond.state,
     },
     questions: {
       evidence: choice(
         {
-          question: "Which candidate region provides the strongest direct evidence for suspectedConcern?",
+          question: "Which candidate region provides the strongest direct evidence for suspectedConcern" + beyond.clause + "?",
           fallback: "Select noMatch when no region provides sufficient evidence",
         },
         {
@@ -225,10 +229,10 @@ export async function locateSourceSignal(
   if (!region) return null;
 
   const classification = await client.systemOne({
-    state: { file: signal.file.path, suspectedConcern, selectedEvidence: region },
+    state: { file: signal.file.path, suspectedConcern, selectedEvidence: region, ...beyond.state },
     questions: {
       mechanism: choice(
-        "Which mechanism best describes the suspected concern supported by selectedEvidence?",
+        "Which mechanism best describes the suspected concern supported by selectedEvidence" + beyond.clause + "?",
         mechanisms[signal.dimension],
       ),
     },
@@ -253,6 +257,7 @@ export async function locateSourceSignal(
       selectedEvidence: region,
       candidateLines: regionLines(region.startLine, region.content),
       fallbackLine: region.startLine,
+      alreadyReported,
     }),
   ]);
 

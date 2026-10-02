@@ -5,14 +5,17 @@ import {
   type Dimension,
   dimensionMetadata,
   dimensions,
+  MAX_FINDINGS_PER_SIGNAL,
   MAX_FOLLOW_UPS,
   MAX_PROFILES,
+  MAX_TEST_GAP_FOLLOW_UPS,
   SCREEN_THRESHOLD,
   SEVERITY_MAX,
 } from "../domain/config.ts";
 import type {
   FileProfile,
   Finding,
+  ReportedIssue,
   ReviewMode,
   ReviewReport,
   Screening,
@@ -31,7 +34,7 @@ type Strategy<File extends { path: string }, Context extends { path: string }> =
     file: File,
     probabilities: Record<Dimension, number>,
   ) => Promise<FileProfile>;
-  locate: (signal: Signal<File>) => Promise<Finding<File> | null>;
+  locate: (signal: Signal<File>, alreadyReported: ReportedIssue[]) => Promise<Finding<File> | null>;
 };
 
 export async function runReview<File extends { path: string }, Context extends { path: string }>(
@@ -73,16 +76,28 @@ export async function runReview<File extends { path: string }, Context extends {
     return strategy.profile(file, probabilities);
   });
 
-  const followUps = signals.slice(0, MAX_FOLLOW_UPS);
+  const followUps = [
+    ...signals.filter((signal) => signal.dimension !== "testGap").slice(0, MAX_FOLLOW_UPS),
+    ...signals.filter((signal) => signal.dimension === "testGap").slice(0, MAX_TEST_GAP_FOLLOW_UPS),
+  ];
   log("Following " + followUps.length + " of " + signals.length + " signals at or above " + SCREEN_THRESHOLD + "...");
-  const located = await mapLimit(followUps, CONCURRENCY, (signal) => {
+  const located = await mapLimit(followUps, CONCURRENCY, async (signal) => {
     log("  inspect " + signal.file.path + " [" + signal.dimension + "=" + signal.probability.toFixed(2) + "]");
-    return strategy.locate(signal);
+    // Ask again with what was already found until the signal yields nothing
+    // new. A repeated line, or a later pass that cannot name an exact line,
+    // means the judgment has run out of distinct issues.
+    const found: Finding<File>[] = [];
+    while (found.length < MAX_FINDINGS_PER_SIGNAL) {
+      const finding = await strategy.locate(signal, found.map(reportedIssue));
+      if (!finding) break;
+      if (found.length > 0 && finding.code === null) break;
+      if (found.some((previous) => previous.line === finding.line)) break;
+      found.push(finding);
+    }
+    return found;
   });
 
-  const findings = located
-    .filter((finding): finding is Finding<File> => finding !== null)
-    .sort((a, b) => b.severity - a.severity);
+  const findings = located.flat().sort((a, b) => b.severity - a.severity);
 
   return {
     mode: strategy.mode,
@@ -109,6 +124,10 @@ export async function runReview<File extends { path: string }, Context extends {
     },
     findings: findings.map(({ file, ...finding }) => ({ file: file.path, ...finding })),
   };
+}
+
+function reportedIssue<File extends { path: string }>(finding: Finding<File>): ReportedIssue {
+  return { line: finding.line, code: finding.code, explanation: finding.explanation };
 }
 
 function maxProbability<File extends { path: string }>(screening: Screening<File>): number {
