@@ -1,0 +1,55 @@
+name: Jev Review
+description: Review pull request changes with TypeSafe Jev and comment the findings on the pull request.
+branding:
+  icon: eye
+  color: blue
+
+inputs:
+  typesafe-api-key:
+    description: TypeSafe API key. Store it as a repository secret.
+    required: true
+  github-token:
+    description: Token used to post the review. Needs pull-requests write permission.
+    default: ${{ github.token }}
+  path:
+    description: Directory to review, relative to the repository root.
+    default: "."
+  fail-on-blocking:
+    description: Fail the job when a finding reaches the request-changes severity.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 24
+
+    - name: Install Jev Review
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --omit=dev --no-audit --no-fund
+
+    # The review reads uncommitted changes against HEAD, so move HEAD to the
+    # base commit while keeping the pull request's files in place.
+    - name: Stage pull request changes
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        if [ -z "$BASE_SHA" ]; then
+          echo "::error::Jev Review runs on pull_request events only"
+          exit 1
+        fi
+        git fetch --no-tags --depth=1 origin "$BASE_SHA"
+        git reset --soft "$BASE_SHA"
+
+    - name: Review pull request
+      shell: bash
+      env:
+        TYPESAFE_API_KEY: ${{ inputs.typesafe-api-key }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        JEV_FAIL_ON_BLOCKING: ${{ inputs.fail-on-blocking }}
+        REVIEW_PATH: ${{ inputs.path }}
+        REVIEW_FILE: ${{ runner.temp }}/jev-review.json
+      run: node "$GITHUB_ACTION_PATH/src/cli/review-pr.ts" "$REVIEW_PATH"

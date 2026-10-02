@@ -56,6 +56,38 @@ Open [http://127.0.0.1:4317](http://127.0.0.1:4317).
 | `npm run dashboard` | Start the local dashboard |
 | `npm run check` | Typecheck, verify dependency flow, and syntax-check the dashboard client |
 
+## GitHub Action
+
+Reviews every pull request and posts the findings as one review with an inline
+comment on each finding's line. Only Jev is called; GitHub is used to publish.
+
+```yaml
+# .github/workflows/jev-review.yml
+name: Jev Review
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: juanlacu/jev-review@main
+        with:
+          typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
+```
+
+Add `TYPESAFE_API_KEY` under the repository's Settings → Secrets and variables →
+Actions. Optional inputs: `path` (review a subdirectory) and `fail-on-blocking`
+(fail the job when a finding requests changes). Pull requests from forks of the
+reviewed repository do not receive secrets, so the review does not run on them.
+
+To preview a review locally without posting, stage a diff and run
+`JEV_DRY_RUN=true node --env-file=.env src/cli/review-pr.ts <path>`.
+
 ## Architecture
 
 Everything lives under `src/`, arranged in layers that only depend downward:
@@ -65,9 +97,12 @@ src/
   domain/      config.ts, types.ts, patch.ts   shared policy, report shapes, diff parsing
   adapters/    git.ts, repository-files.ts     change and complete-source discovery
                report-store.ts                 atomic report save/load
+               github.ts                       pull request event and review posting
   review/      changes.ts, codebase.ts          mode-specific workflows
                *-judgments.ts, workflow.ts     Jev calls and shared staged orchestration
+               explain.ts                      exact line, defect pattern, explanation
   cli/         review-*.ts, save-*.ts           explicit mode entry points
+               review-pr.ts                    GitHub Action entry point
   dashboard/   server.ts, public/              local-only HTTP server and the plain client
 ```
 
