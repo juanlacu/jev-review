@@ -5,13 +5,12 @@ import {
   type Dimension,
   dimensions,
   mechanisms,
-  MIN_LOCATION_CONFIDENCE,
   owners,
   reviewPriorityRubric,
   ROUTE_SEVERITY,
   severityRubric,
 } from "../domain/config.ts";
-import { addedLines, parseHunks } from "../domain/patch.ts";
+import { hunkLines, parseHunks } from "../domain/patch.ts";
 import type {
   ChangedFile,
   FileProfile,
@@ -20,7 +19,7 @@ import type {
   Screening,
   Signal,
 } from "../domain/types.ts";
-import { beyondReported, explainFinding } from "./explain.ts";
+import { beyondReported, explainFinding, pickCandidate } from "./explain.ts";
 
 const client = new TypeSafeClient();
 
@@ -38,19 +37,27 @@ export async function screenFile(
   changedTests: ChangedFile[],
 ): Promise<Screening<ChangedFile>> {
   const response = await client.systemOne({
-    state: { file, changedTests },
+    state: {
+      file,
+      changedTests: changedTests.map(({ path, patch }) => ({ path, patch })),
+    },
     questions: {
       correctness: noul(
         {
-          question: "Does file.patch directly support that this change likely introduces incorrect runtime behavior?",
+          question: "Does file.patch, read with file.content and file.related, directly support that this change likely introduces incorrect runtime behavior?",
           inspect: "file.patch",
-          focus: "Concrete behavior, state, data-flow, or async errors introduced by added or modified lines",
+          focus: "Concrete behavior, state, data-flow, or async errors introduced by added or modified lines, including mismatches with unchanged code in file.content and with the changes in file.related",
           ignore: ["Style preferences", "Naming concerns", "Unsupported speculation"],
         },
         {
           true: {
             what: "The patch contains a realistic path to a wrong runtime result",
-            examples: ["A condition now handles the opposite case", "A value is written to the wrong field"],
+            examples: [
+              "A condition now handles the opposite case",
+              "A value is written to the wrong field",
+              "A new value is not handled by unchanged code in file.content that consumes it",
+              "file.patch and a change in file.related apply the same rule with different thresholds",
+            ],
           },
           false: {
             what: "The patch is correct, non-behavioral, or lacks direct evidence of a bug",
@@ -77,9 +84,9 @@ export async function screenFile(
       ),
       reliability: noul(
         {
-          question: "Does file.patch directly support that this change can crash, race, leak, deadlock, or recover poorly?",
+          question: "Does file.patch, read with file.content and file.related, directly support that this change can crash, race, leak, deadlock, or recover poorly?",
           inspect: "file.patch",
-          focus: "Realistic resource, concurrency, cancellation, and failure paths",
+          focus: "Realistic resource, concurrency, cancellation, and failure paths, including unchanged code in file.content that the change now reaches",
         },
         {
           true: {
@@ -93,7 +100,7 @@ export async function screenFile(
         {
           question: "Does file.patch directly support that this change can break an existing caller, format, protocol, or public behavior?",
           inspect: "file.patch",
-          focus: "Externally observed contracts rather than internal implementation details",
+          focus: "Externally observed contracts rather than internal implementation details, including callers changed in file.related",
         },
         {
           true: {
@@ -167,6 +174,7 @@ export async function locateSignal(
   alreadyReported: ReportedIssue[] = [],
 ): Promise<Finding<ChangedFile> | null> {
   const beyond = beyondReported(alreadyReported);
+  const context = { fileContent: signal.file.content, relatedChanges: signal.file.related };
   const hunks = parseHunks(signal.file.patch);
   if (hunks.length === 0) return null;
 
@@ -179,6 +187,7 @@ export async function locateSignal(
       file: signal.file.path,
       suspectedConcern: { ...suspectedConcern, screeningProbability: signal.probability },
       candidateHunks: hunks,
+      context,
       ...beyond.state,
     },
     questions: {
@@ -197,13 +206,13 @@ export async function locateSignal(
     },
   });
 
-  const selected = location.answers.evidence;
-  if (selected.choice === "noMatch" || selected.confidence < MIN_LOCATION_CONFIDENCE) return null;
+  const selected = pickCandidate(location.answers.evidence, "noMatch", alreadyReported.length > 0);
+  if (!selected) return null;
   const hunk = hunks.find((candidate) => candidate.id === selected.choice);
   if (!hunk) return null;
 
   const classification = await client.systemOne({
-    state: { file: signal.file.path, suspectedConcern, selectedEvidence: hunk, ...beyond.state },
+    state: { file: signal.file.path, suspectedConcern, selectedEvidence: hunk, context, ...beyond.state },
     questions: {
       mechanism: choice(
         "Which mechanism best describes the suspected concern supported by selectedEvidence" + beyond.clause + "?",
@@ -216,7 +225,7 @@ export async function locateSignal(
 
   const [impact, explained] = await Promise.all([
     client.systemOne({
-      state: { file: signal.file.path, suspectedConcern, selectedEvidence: hunk },
+      state: { file: signal.file.path, suspectedConcern, selectedEvidence: hunk, context },
       questions: {
         severity: score(
           "Assuming selectedEvidence exhibits suspectedConcern, rate the likely production impact.",
@@ -229,7 +238,8 @@ export async function locateSignal(
       dimension: signal.dimension,
       mechanism: mechanism.choice,
       selectedEvidence: hunk,
-      candidateLines: addedLines(hunk),
+      candidateLines: hunkLines(hunk),
+      context,
       fallbackLine: hunk.startLine,
       alreadyReported,
     }),
@@ -260,7 +270,7 @@ export async function locateSignal(
   return {
     ...signal,
     line: explained.line,
-    locationConfidence: selected.confidence,
+    locationConfidence: selected.probability,
     mechanism: mechanism.choice,
     mechanismConfidence: mechanism.confidence,
     pattern: explained.pattern,

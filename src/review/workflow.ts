@@ -87,7 +87,7 @@ export async function runReview<File extends { path: string }, Context extends {
     // new. A repeated line, or a later pass that cannot name an exact line,
     // means the judgment has run out of distinct issues.
     const found: Finding<File>[] = [];
-    while (found.length < MAX_FINDINGS_PER_SIGNAL) {
+    while (found.length < MAX_FINDINGS_PER_SIGNAL[signal.dimension]) {
       const finding = await strategy.locate(signal, found.map(reportedIssue));
       if (!finding) break;
       if (found.length > 0 && finding.code === null) break;

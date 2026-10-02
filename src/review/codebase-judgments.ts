@@ -7,7 +7,6 @@ import {
   type Dimension,
   dimensions,
   mechanisms,
-  MIN_LOCATION_CONFIDENCE,
   owners,
   reviewPriorityRubric,
   ROUTE_SEVERITY,
@@ -22,7 +21,7 @@ import type {
   Signal,
   SourceFile,
 } from "../domain/types.ts";
-import { beyondReported, explainFinding } from "./explain.ts";
+import { beyondReported, explainFinding, pickCandidate } from "./explain.ts";
 
 const client = new TypeSafeClient();
 const REGION_LINES = 80;
@@ -223,8 +222,8 @@ export async function locateSourceSignal(
     },
   });
 
-  const selected = location.answers.evidence;
-  if (selected.choice === "noMatch" || selected.confidence < MIN_LOCATION_CONFIDENCE) return null;
+  const selected = pickCandidate(location.answers.evidence, "noMatch", alreadyReported.length > 0);
+  if (!selected) return null;
   const region = regions.find((candidate) => candidate.id === selected.choice);
   if (!region) return null;
 
@@ -286,7 +285,7 @@ export async function locateSourceSignal(
   return {
     ...signal,
     line: explained.line,
-    locationConfidence: selected.confidence,
+    locationConfidence: selected.probability,
     mechanism: mechanism.choice,
     mechanismConfidence: mechanism.confidence,
     pattern: explained.pattern,

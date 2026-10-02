@@ -1,5 +1,6 @@
 import { changedFiles } from "../adapters/git.ts";
 import { TEST_FILE } from "../domain/config.ts";
+import { withRelatedChanges } from "../domain/context.ts";
 import type { ChangedFile, ReviewReport } from "../domain/types.ts";
 import { locateSignal, profileFile, screenFile } from "./judgments.ts";
 import { type Log, runReview } from "./workflow.ts";
@@ -24,7 +25,7 @@ export function hasReviewableChanges(scope: string): boolean {
 function discover(scope: string): { files: ChangedFile[]; contextFiles: ChangedFile[] } {
   const changed = changedFiles(scope);
   return {
-    files: changed.filter((file) => !TEST_FILE.test(file.path)),
+    files: withRelatedChanges(changed.filter((file) => !TEST_FILE.test(file.path))),
     contextFiles: changed.filter((file) => TEST_FILE.test(file.path)),
   };
 }

@@ -6,6 +6,16 @@ export type ReviewMode = "changes" | "codebase";
 export type ChangedFile = {
   path: string;
   patch: string;
+  // The file after the change, so judgments can see unchanged code the patch
+  // interacts with. Truncated to MAX_CONTEXT_CHARS.
+  content: string;
+  // Other changed source files this one imports or is imported by.
+  related: RelatedChange[];
+};
+
+export type RelatedChange = {
+  path: string;
+  patch: string;
 };
 
 export type SourceFile = {
@@ -23,6 +33,8 @@ export type EvidenceLine = {
   id: string;
   line: number;
   code: string;
+  // False for an unchanged context line shown in a diff hunk.
+  changed: boolean;
 };
 
 export type Screening<File extends { path: string }> = {
