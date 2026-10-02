@@ -19,6 +19,9 @@ Noul risk matrix
 
 - Exposes separate change-review and complete-codebase entry points.
 - Uses changed or related tests as context when judging test gaps.
+- Reads each changed file in full, plus the diffs of changed files it imports
+  or is imported by, so a change that conflicts with unchanged code or with
+  another file in the same diff can be flagged.
 - Screens correctness, security, reliability, compatibility, and test coverage.
 - Selects concrete diff hunks or source regions before scoring impact.
 - Uses structured hints, counterexamples, and explicit decision boundaries.
@@ -97,6 +100,7 @@ Everything lives under `src/`, arranged in layers that only depend downward:
 ```text
 src/
   domain/      config.ts, types.ts, patch.ts   shared policy, report shapes, diff parsing
+               context.ts                      related changed files through imports
   adapters/    git.ts, repository-files.ts     change and complete-source discovery
                report-store.ts                 atomic report save/load
                github.ts                       pull request event and review posting

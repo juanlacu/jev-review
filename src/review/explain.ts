@@ -6,7 +6,8 @@ import {
   type Dimension,
   dimensionMetadata,
   mechanisms,
-  MIN_LOCATION_CONFIDENCE,
+  MAX_NO_MATCH_PROBABILITY,
+  MAX_REPEAT_NO_MATCH_PROBABILITY,
   patterns,
 } from "../domain/config.ts";
 import type { EvidenceLine, ReportedIssue } from "../domain/types.ts";
@@ -29,6 +30,8 @@ export async function explainFinding(input: {
   candidateLines: EvidenceLine[];
   fallbackLine: number;
   alreadyReported: ReportedIssue[];
+  // Change review passes the file's full source and related changes.
+  context?: JsonValue;
 }): Promise<Explanation> {
   const beyond = beyondReported(input.alreadyReported);
   const reportedLines = new Set(input.alreadyReported.map((issue) => issue.line));
@@ -37,7 +40,9 @@ export async function explainFinding(input: {
   const patternOptions = (patterns[input.dimension] as Record<string, Record<string, string>>)[input.mechanism] ?? {
     other: mechanismText,
   };
-  const lineOptions = Object.fromEntries(candidateLines.map((entry) => [entry.id, entry.code]));
+  const lineOptions = Object.fromEntries(
+    candidateLines.map((entry) => [entry.id, entry.changed ? entry.code : `(unchanged) ${entry.code}`]),
+  );
   const hasLines = candidateLines.length > 0;
 
   const response = await client.systemOne({
@@ -45,6 +50,7 @@ export async function explainFinding(input: {
       file: input.file,
       concern: { dimension: input.dimension, mechanism: mechanismText },
       selectedEvidence: input.selectedEvidence,
+      ...(input.context !== undefined && { context: input.context }),
       ...beyond.state,
     },
     questions: {
@@ -64,13 +70,10 @@ export async function explainFinding(input: {
     },
   });
 
-  const answers = response.answers as Record<string, { choice: string; confidence: number }>;
+  const answers = response.answers as Record<string, ChoiceAnswer>;
   const pattern = answers.pattern;
-  const picked = answers.line;
-  const exact =
-    picked && picked.confidence >= MIN_LOCATION_CONFIDENCE
-      ? candidateLines.find((entry) => entry.id === picked.choice)
-      : undefined;
+  const picked = answers.line && pickCandidate(answers.line, "noMatch", input.alreadyReported.length > 0);
+  const exact = picked ? candidateLines.find((entry) => entry.id === picked.choice) : undefined;
 
   const label = dimensionMetadata.find((entry) => entry.key === input.dimension)?.label ?? input.dimension;
   return {
@@ -80,6 +83,28 @@ export async function explainFinding(input: {
     patternConfidence: pattern.confidence,
     explanation: `${label} · ${mechanismText}: ${describe(patternOptions, pattern.choice)}.`,
   };
+}
+
+type ChoiceAnswer = {
+  choice: string;
+  confidence: number;
+  probabilities: Readonly<Record<string, number>>;
+};
+
+// Picks the most likely candidate unless the "none" option is likely. Gating on
+// the choice's confidence would drop real evidence whenever several candidates
+// share the probability, such as two hunks that both show the concern.
+export function pickCandidate(
+  answer: ChoiceAnswer,
+  none: string,
+  repeat = false,
+): { choice: string; probability: number } | null {
+  const limit = repeat ? MAX_REPEAT_NO_MATCH_PROBABILITY : MAX_NO_MATCH_PROBABILITY;
+  if ((answer.probabilities[none] ?? 0) >= limit) return null;
+  const [choice, probability] = Object.entries(answer.probabilities)
+    .filter(([label]) => label !== none)
+    .reduce((best, entry) => (entry[1] > best[1] ? entry : best), ["", -1]);
+  return choice ? { choice, probability } : null;
 }
 
 // Extra state and question wording that steer a repeated judgment away from

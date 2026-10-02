@@ -2,22 +2,34 @@
 // concerns the reviewer screens for. Pure data; no imports.
 
 // Screening signals at or above this probability are followed up.
-export const SCREEN_THRESHOLD = 0.7;
+export const SCREEN_THRESHOLD = 0.65;
 // Severity is scored on a 0–3 rubric; the dashboard mirrors this ceiling.
 export const SEVERITY_MAX = 3;
 // Findings at or above this severity are routed to a reviewer.
 export const ROUTE_SEVERITY = 1.5;
 // Findings at or above this severity request changes instead of a comment.
 export const BLOCKING_SEVERITY = 2;
-// Minimum confidence for an evidence-hunk selection to count.
-export const MIN_LOCATION_CONFIDENCE = 0.55;
+// An evidence or line selection is dropped when the "none" option is at least
+// this likely. Otherwise the most likely candidate is used, even when the
+// probability is split between several candidates that all show the concern.
+export const MAX_NO_MATCH_PROBABILITY = 0.5;
+// Repeat passes on a signal need clearer evidence than the first one.
+export const MAX_REPEAT_NO_MATCH_PROBABILITY = 0.3;
+
+// Context sent with each changed file: its full source after the change and
+// the patches of related changed files, bounded to keep requests small.
+export const MAX_CONTEXT_CHARS = 16_000;
+export const MAX_RELATED_CHANGES = 3;
+export const MAX_RELATED_PATCH_CHARS = 6_000;
 
 export const MAX_FOLLOW_UPS = 8;
 // Test-gap signals get their own, smaller budget so they never crowd out
 // defect signals; a repository without tests raises one in every file.
 export const MAX_TEST_GAP_FOLLOW_UPS = 1;
-// A followed signal is asked again for a distinct issue until it finds none.
-export const MAX_FINDINGS_PER_SIGNAL = 3;
+// A followed signal is asked again for a distinct issue until it finds none,
+// up to this many findings. Repeat passes found further real defects for
+// correctness and security; for the other dimensions they mostly restated the
+// first finding as a weaker concern, so those report once per signal.
 export const MAX_PROFILES = 5;
 export const CONCURRENCY = 3;
 
@@ -33,6 +45,14 @@ export const dimensions = {
 } as const;
 
 export type Dimension = keyof typeof dimensions;
+
+export const MAX_FINDINGS_PER_SIGNAL: Record<Dimension, number> = {
+  correctness: 3,
+  security: 3,
+  reliability: 1,
+  compatibility: 1,
+  testGap: 1,
+};
 
 export const dimensionMetadata: Array<{ key: Dimension; label: string; short: string }> = [
   { key: "correctness", label: "Correctness", short: "Corr" },

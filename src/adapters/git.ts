@@ -42,10 +42,15 @@ export function changedFiles(scope: string): ChangedFile[] {
     SOURCE_FILE.test(path),
   );
 
-  return paths.map((path) => ({
-    path,
-    patch: untrackedSet.has(path)
-      ? patchForNewFile(readFileSync(resolve(repoRoot, path), "utf8"))
-      : git(repoRoot, ["diff", "HEAD", "--unified=3", "--", path]),
-  }));
+  return paths.map((path) => {
+    const content = readFileSync(resolve(repoRoot, path), "utf8");
+    return {
+      path,
+      patch: untrackedSet.has(path)
+        ? patchForNewFile(content)
+        : git(repoRoot, ["diff", "HEAD", "--unified=3", "--", path]),
+      content,
+      related: [],
+    };
+  });
 }

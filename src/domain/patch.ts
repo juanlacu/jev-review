@@ -52,14 +52,15 @@ export function patchForNewFile(source: string): string {
 
 const MAX_EVIDENCE_LINE_CHARS = 200;
 
-// Numbers the added lines of a hunk with their new-file line numbers, so a
-// judgment can point at one exact line instead of the hunk start.
-export function addedLines(hunk: Hunk): EvidenceLine[] {
+// Numbers the new-file lines of a hunk, added and unchanged, so a judgment can
+// point at one exact line. Unchanged lines are candidates too: a change can
+// make an untouched line next to it wrong, and GitHub accepts comments there.
+export function hunkLines(hunk: Hunk): EvidenceLine[] {
   const result: EvidenceLine[] = [];
   let line = hunk.startLine;
   for (const text of hunk.patch.split("\n").slice(1)) {
     if (text.startsWith("-") || text.startsWith("\\")) continue;
-    if (text.startsWith("+")) result.push(evidenceLine(line, text.slice(1)));
+    result.push(evidenceLine(line, text.slice(1), text.startsWith("+")));
     line += 1;
   }
   return result.filter((entry) => entry.code.length > 0);
@@ -69,10 +70,10 @@ export function addedLines(hunk: Hunk): EvidenceLine[] {
 export function regionLines(startLine: number, content: string): EvidenceLine[] {
   return content
     .split("\n")
-    .map((text, index) => evidenceLine(startLine + index, text))
+    .map((text, index) => evidenceLine(startLine + index, text, true))
     .filter((entry) => entry.code.length > 0);
 }
 
-function evidenceLine(line: number, text: string): EvidenceLine {
-  return { id: `L${line}`, line, code: text.trim().slice(0, MAX_EVIDENCE_LINE_CHARS) };
+function evidenceLine(line: number, text: string, changed: boolean): EvidenceLine {
+  return { id: `L${line}`, line, code: text.trim().slice(0, MAX_EVIDENCE_LINE_CHARS), changed };
 }
