@@ -13,6 +13,7 @@ import {
   ROUTE_SEVERITY,
   severityRubric,
 } from "../domain/config.ts";
+import { regionLines } from "../domain/patch.ts";
 import type {
   FileProfile,
   Finding,
@@ -20,6 +21,7 @@ import type {
   Signal,
   SourceFile,
 } from "../domain/types.ts";
+import { explainFinding } from "./explain.ts";
 
 const client = new TypeSafeClient();
 const REGION_LINES = 80;
@@ -234,15 +236,25 @@ export async function locateSourceSignal(
   const mechanism = classification.answers.mechanism;
   if (mechanism.choice === "noIssue") return null;
 
-  const impact = await client.systemOne({
-    state: { file: signal.file.path, suspectedConcern, selectedEvidence: region },
-    questions: {
-      severity: score(
-        "Assuming selectedEvidence exhibits suspectedConcern, rate the likely production impact.",
-        [...severityRubric],
-      ),
-    },
-  });
+  const [impact, explained] = await Promise.all([
+    client.systemOne({
+      state: { file: signal.file.path, suspectedConcern, selectedEvidence: region },
+      questions: {
+        severity: score(
+          "Assuming selectedEvidence exhibits suspectedConcern, rate the likely production impact.",
+          [...severityRubric],
+        ),
+      },
+    }),
+    explainFinding({
+      file: signal.file.path,
+      dimension: signal.dimension,
+      mechanism: mechanism.choice,
+      selectedEvidence: region,
+      candidateLines: regionLines(region.startLine, region.content),
+      fallbackLine: region.startLine,
+    }),
+  ]);
 
   const severity = impact.answers.severity;
   let owner: string | null = null;
@@ -268,10 +280,14 @@ export async function locateSourceSignal(
 
   return {
     ...signal,
-    line: region.startLine,
+    line: explained.line,
     locationConfidence: selected.confidence,
     mechanism: mechanism.choice,
     mechanismConfidence: mechanism.confidence,
+    pattern: explained.pattern,
+    patternConfidence: explained.patternConfidence,
+    code: explained.code,
+    explanation: explained.explanation,
     severity: severity.score,
     severityConfidence: severity.confidence,
     owner,

@@ -1,6 +1,6 @@
 import { changedFiles } from "../adapters/git.ts";
 import { TEST_FILE } from "../domain/config.ts";
-import type { ReviewReport } from "../domain/types.ts";
+import type { ChangedFile, ReviewReport } from "../domain/types.ts";
 import { locateSignal, profileFile, screenFile } from "./judgments.ts";
 import { type Log, runReview } from "./workflow.ts";
 
@@ -9,16 +9,22 @@ export function runChangeReview(scope: string, log: Log): Promise<ReviewReport> 
     mode: "changes",
     subject: "changed source",
     context: "changed test",
-    discover: (target) => {
-      const changed = changedFiles(target);
-      const contextFiles = changed.filter((file) => TEST_FILE.test(file.path));
-      return {
-        files: changed.filter((file) => !TEST_FILE.test(file.path)),
-        contextFiles,
-      };
-    },
+    discover,
     screen: screenFile,
     profile: profileFile,
     locate: locateSignal,
   });
+}
+
+// True when the diff under scope has at least one non-test source file.
+export function hasReviewableChanges(scope: string): boolean {
+  return discover(scope).files.length > 0;
+}
+
+function discover(scope: string): { files: ChangedFile[]; contextFiles: ChangedFile[] } {
+  const changed = changedFiles(scope);
+  return {
+    files: changed.filter((file) => !TEST_FILE.test(file.path)),
+    contextFiles: changed.filter((file) => TEST_FILE.test(file.path)),
+  };
 }

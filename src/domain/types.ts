@@ -19,6 +19,12 @@ export type Hunk = {
   patch: string;
 };
 
+export type EvidenceLine = {
+  id: string;
+  line: number;
+  code: string;
+};
+
 export type Screening<File extends { path: string }> = {
   file: File;
   probabilities: Record<Dimension, number>;
@@ -35,6 +41,12 @@ export type Finding<File extends { path: string }> = Signal<File> & {
   locationConfidence: number;
   mechanism: string;
   mechanismConfidence: number;
+  pattern: string;
+  patternConfidence: number;
+  // The exact line Jev selected, or null when it fell back to the region start.
+  code: string | null;
+  // Composed in code from the selected dimension, mechanism, and pattern.
+  explanation: string;
   severity: number;
   severityConfidence: number;
   owner: string | null;

@@ -1,5 +1,5 @@
 // Unified-diff helpers shared by the Git adapter and the review workflow.
-import type { Hunk } from "./types.ts";
+import type { EvidenceLine, Hunk } from "./types.ts";
 
 const UNTRACKED_CHUNK_LINES = 80;
 
@@ -48,4 +48,31 @@ export function patchForNewFile(source: string): string {
       ...chunk.map((line) => `+${line}`),
     ].join("\n");
   }).join("\n");
+}
+
+const MAX_EVIDENCE_LINE_CHARS = 200;
+
+// Numbers the added lines of a hunk with their new-file line numbers, so a
+// judgment can point at one exact line instead of the hunk start.
+export function addedLines(hunk: Hunk): EvidenceLine[] {
+  const result: EvidenceLine[] = [];
+  let line = hunk.startLine;
+  for (const text of hunk.patch.split("\n").slice(1)) {
+    if (text.startsWith("-") || text.startsWith("\\")) continue;
+    if (text.startsWith("+")) result.push(evidenceLine(line, text.slice(1)));
+    line += 1;
+  }
+  return result.filter((entry) => entry.code.length > 0);
+}
+
+// Numbers the lines of a complete source region starting at startLine.
+export function regionLines(startLine: number, content: string): EvidenceLine[] {
+  return content
+    .split("\n")
+    .map((text, index) => evidenceLine(startLine + index, text))
+    .filter((entry) => entry.code.length > 0);
+}
+
+function evidenceLine(line: number, text: string): EvidenceLine {
+  return { id: `L${line}`, line, code: text.trim().slice(0, MAX_EVIDENCE_LINE_CHARS) };
 }
