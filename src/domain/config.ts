@@ -13,6 +13,11 @@ export const BLOCKING_SEVERITY = 2;
 export const MIN_LOCATION_CONFIDENCE = 0.55;
 
 export const MAX_FOLLOW_UPS = 8;
+// Test-gap signals get their own, smaller budget so they never crowd out
+// defect signals; a repository without tests raises one in every file.
+export const MAX_TEST_GAP_FOLLOW_UPS = 1;
+// A followed signal is asked again for a distinct issue until it finds none.
+export const MAX_FINDINGS_PER_SIGNAL = 3;
 export const MAX_PROFILES = 5;
 export const CONCURRENCY = 3;
 

@@ -54,6 +54,13 @@ export type Finding<File extends { path: string }> = Signal<File> & {
   action: "comment" | "request_changes";
 };
 
+// What a signal has already produced, so the next pass looks for a different issue.
+export type ReportedIssue = {
+  line: number;
+  code: string | null;
+  explanation: string;
+};
+
 export type FileProfile = {
   file: string;
   category: string;
