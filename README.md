@@ -63,8 +63,9 @@ Open [http://127.0.0.1:4317](http://127.0.0.1:4317).
 
 Reviews every pull request and posts the findings as one review with an inline
 comment on each finding's line. Only Jev is called; GitHub is used to publish.
-Findings on the same line share one comment, and a rerun on a later push skips
-findings already posted on the pull request.
+Findings on the same line share one comment, and a rerun on a later push does
+not comment again on a line it already commented on, unless that line's code
+changed.
 
 ```yaml
 # .github/workflows/jev-review.yml

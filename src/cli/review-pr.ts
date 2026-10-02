@@ -2,8 +2,8 @@
 // the findings as one review with inline comments. The action stages the PR
 // beforehand by soft-resetting to the base commit.
 //
-// Findings on the same line share one comment, and each finding carries a
-// hidden key so a rerun on a later push skips what is already on the PR.
+// Findings on the same line share one comment, and each comment carries a
+// hidden key for its line so a rerun on a later push leaves that line alone.
 //
 //   GITHUB_TOKEN, GITHUB_EVENT_PATH   provided by the action
 //   JEV_FAIL_ON_BLOCKING=true         exit 1 when a finding requests changes
@@ -43,7 +43,7 @@ const pr = dryRun ? null : pullRequestFromEvent(required("GITHUB_EVENT_PATH"));
 const token = dryRun ? "" : required("GITHUB_TOKEN");
 
 const posted = pr ? (await postedReviewText(token, pr)).join("\n") : "";
-const fresh = report.findings.filter((finding) => !posted.includes(findingMarker(finding)));
+const fresh = report.findings.filter((finding) => !posted.includes(lineMarker(finding)));
 const repeated = report.findings.length - fresh.length;
 summarize(summaryMarkdown(report, repeated));
 
@@ -82,13 +82,15 @@ if (blocking.length > 0 && process.env.JEV_FAIL_ON_BLOCKING === "true") {
   process.exit(1);
 }
 
-// Keyed on the quoted code rather than the line number, so a finding is still
-// recognized after unrelated edits above it shift its line. The pattern is left
-// out because Jev's pick can vary between runs for the same issue.
-function findingMarker(finding: ReportFinding): string {
+// Identifies a commented line by file and quoted code rather than line number,
+// so it is still recognized after unrelated edits above it shift the line; if
+// the code on the line changes, it can be commented on again. Dimension and
+// pattern are left out: a rerun often reports the same issue on the same line
+// under another dimension or pattern.
+function lineMarker(finding: ReportFinding): string {
   const anchor = finding.code ?? `line ${finding.line}`;
-  const key = [finding.file, finding.dimension, anchor].join("\n");
-  return `<!-- jev-review:finding:${createHash("sha256").update(key).digest("hex").slice(0, 16)} -->`;
+  const key = [finding.file, anchor].join("\n");
+  return `<!-- jev-review:line:${createHash("sha256").update(key).digest("hex").slice(0, 16)} -->`;
 }
 
 function groupByLine(findings: ReportFinding[]): ReportFinding[][] {
@@ -122,7 +124,7 @@ function commentBody(group: ReportFinding[]): string {
   ].filter(Boolean);
   const blocks = group.some((finding) => finding.action === "request_changes");
   lines.push("", `<sub>${blocks ? "⚠️ Request changes · " : ""}${details.join(" · ")}</sub>`);
-  lines.push(...group.map(findingMarker));
+  lines.push(lineMarker(first));
   return lines.join("\n");
 }
 
